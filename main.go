@@ -18,8 +18,8 @@ import (
 
 const (
 	charset     = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789"
-	maxWorkers  = 10
-	numRequests = 1000
+	maxWorkers  = 100
+	numRequests = 100_000
 )
 
 var (
@@ -58,6 +58,7 @@ func main() {
 	for i := 0; i < numRequests; i++ {
 		taskQueue <- struct{}{}
 	}
+	close(taskQueue) // Close the queue. Nothing is ever being put into the queue.
 
 	var wg sync.WaitGroup
 
@@ -118,6 +119,7 @@ func swipeLeftOrRight(ctx context.Context, client *RngClient, direction string) 
 
 	// StatusCode should be 200 or 201, else log warn
 	if resp.StatusCode == http.StatusOK || resp.StatusCode == http.StatusCreated {
+		log.Logger.Debug().Msg(resp.Status)
 		atomic.AddUint64(&successCount, 1)
 	} else {
 		atomic.AddUint64(&errorCount, 1)

@@ -23,19 +23,12 @@ func init() {
 		}
 	}
 
-	// fmt.Printf("Current log level: %s\n", zerolog.GlobalLevel().String())
+	fmt.Printf("Current log level: %s\n", zerolog.GlobalLevel().String())
 	wr := diode.NewWriter(os.Stdout, 1000, 10*time.Millisecond, func(missed int) {
 		fmt.Printf("Logger Dropped %d messages", missed)
 	})
 
 	logger := zerolog.New(wr).With().Timestamp().Logger()
-
-	// Include code location if log level is DEBUG
-	if zerolog.GlobalLevel() == zerolog.DebugLevel {
-		logger = logger.With().Caller().Logger()
-	} else {
-		logger = logger.With().Logger()
-	}
 
 	// Set the logger with the proper context to the global Logger
 	Logger = logger
