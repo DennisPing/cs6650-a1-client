@@ -19,7 +19,7 @@ import (
 const (
 	charset     = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789"
 	maxWorkers  = 10
-	numRequests = 1000
+	numRequests = 10_000
 )
 
 var (
