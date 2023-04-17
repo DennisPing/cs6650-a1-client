@@ -50,26 +50,29 @@ func main() {
 
 	ctx := context.Background()
 
-	// Initialize RNG client pool
-	RngClientPool := make(chan *RngClient, maxWorkers)
-	for i := 0; i < maxWorkers; i++ {
-		RngClientPool <- NewRngClient(serverURL)
-	}
-
 	log.Logger.Info().Msgf("Starting %d requests...", numRequests)
 	startTime := time.Now()
-	var wg sync.WaitGroup
-	for i := 0; i < numRequests; i++ {
-		wg.Add(1)
 
+	// Populate the task queue with tasks (token)
+	taskQueue := make(chan struct{}, numRequests)
+	for i := 0; i < numRequests; i++ {
+		taskQueue <- struct{}{}
+	}
+
+	var wg sync.WaitGroup
+
+	// Spawn numWorkers
+	for i := 0; i < maxWorkers; i++ {
+		wg.Add(1)
 		go func() {
 			defer wg.Done()
-			rngClient := <-RngClientPool // Get an RNG client from the pool
-			defer func() {
-				RngClientPool <- rngClient // Release the slot so that other goroutines can acquire client
-			}()
-			direction := randDirection(rngClient.rng)
-			swipeLeftOrRight(ctx, rngClient, direction)
+			rngClient := NewRngClient(serverURL)
+
+			// Do tasks until taskQueue is empty
+			for range taskQueue {
+				direction := randDirection(rngClient.rng)
+				swipeLeftOrRight(ctx, rngClient, direction)
+			}
 		}()
 	}
 	wg.Wait()
