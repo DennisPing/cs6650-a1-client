@@ -18,8 +18,8 @@ import (
 
 const (
 	charset     = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789"
-	maxWorkers  = 100
-	numRequests = 100_000
+	maxWorkers  = 10
+	numRequests = 1000
 )
 
 var (
@@ -33,7 +33,7 @@ func main() {
 		log.Logger.Fatal().Msg("SERVER_URL env variable not set")
 	}
 	// Needed for local testing since the client and the server can't both listen on port 8080
-	port := os.Getenv("PORT") // Set the PORT to 8081 for local testing
+	port := os.Getenv("CLIENT_PORT") // Set the PORT to 8081 for local testing
 	if port == "" {
 		port = "8080" // For Cloud Run
 	}
