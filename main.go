@@ -21,7 +21,7 @@ import (
 const (
 	charset     = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789"
 	maxWorkers  = 10
-	numRequests = 100_000
+	numRequests = 500_000
 )
 
 var (
@@ -79,10 +79,16 @@ func main() {
 		}()
 	}
 	wg.Wait()
+
 	duration := time.Since(startTime)
-	log.Logger.Info().Msgf("Total run time: %v\n", duration)
-	log.Logger.Info().Msgf("Success count: %d\n", atomic.LoadUint64(&successCount))
-	log.Logger.Info().Msgf("Error count: %d\n", atomic.LoadUint64(&errorCount))
+	success := atomic.LoadUint64(&successCount)
+	errors := atomic.LoadUint64(&errorCount)
+	throughput := float64(success) / duration.Seconds()
+
+	log.Logger.Info().Msgf("Success count: %d", success)
+	log.Logger.Info().Msgf("Error count: %d", errors)
+	log.Logger.Info().Msgf("Total run time: %v", duration)
+	log.Logger.Info().Msgf("Throughput: %.2f req/sec", throughput)
 }
 
 func swipeLeftOrRight(ctx context.Context, client *RngClient, direction string) {
