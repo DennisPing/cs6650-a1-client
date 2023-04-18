@@ -20,7 +20,7 @@ import (
 
 const (
 	charset     = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789"
-	maxWorkers  = 10
+	maxWorkers  = 50
 	numRequests = 500_000
 )
 
@@ -39,7 +39,6 @@ func main() {
 	if port == "" {
 		port = "8080" // For Cloud Run
 	}
-	log.Logger.Info().Msgf("Client PORT: %s", port)
 
 	// Set up dummy HTTP server to satisfy Cloud Run requirements
 	go func() {
@@ -61,6 +60,7 @@ func main() {
 
 	var wg sync.WaitGroup
 
+	log.Logger.Info().Msgf("Using %d goroutines", maxWorkers)
 	log.Logger.Info().Msgf("Starting %d requests...", numRequests)
 	startTime := time.Now()
 
