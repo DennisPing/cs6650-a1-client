@@ -1,7 +1,9 @@
 package main
 
 import (
+	"bytes"
 	"context"
+	"encoding/json"
 	"fmt"
 	"math"
 	"math/rand"
@@ -12,14 +14,14 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/DennisPing/cs6650-a1-client/models"
 	"github.com/DennisPing/cs6650-distributed-systems/assignment1/client-single/log"
-	api "github.com/DennisPing/twinder-sdk-go"
 )
 
 const (
 	charset     = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789"
-	maxWorkers  = 100
-	numRequests = 100_000
+	maxWorkers  = 10
+	numRequests = 10_000
 )
 
 var (
@@ -32,7 +34,7 @@ func main() {
 	if serverURL == "" {
 		log.Logger.Fatal().Msg("SERVER_URL env variable not set")
 	}
-	// Needed for local testing since the client and the server can't both listen on port 8080
+
 	port := os.Getenv("CLIENT_PORT") // Set the PORT to 8081 for local testing
 	if port == "" {
 		port = "8080" // For Cloud Run
@@ -50,9 +52,6 @@ func main() {
 
 	ctx := context.Background()
 
-	log.Logger.Info().Msgf("Starting %d requests...", numRequests)
-	startTime := time.Now()
-
 	// Populate the task queue with tasks (token)
 	taskQueue := make(chan struct{}, numRequests)
 	for i := 0; i < numRequests; i++ {
@@ -61,6 +60,9 @@ func main() {
 	close(taskQueue) // Close the queue. Nothing is ever being put into the queue.
 
 	var wg sync.WaitGroup
+
+	log.Logger.Info().Msgf("Starting %d requests...", numRequests)
+	startTime := time.Now()
 
 	// Spawn numWorkers
 	for i := 0; i < maxWorkers; i++ {
@@ -84,43 +86,56 @@ func main() {
 }
 
 func swipeLeftOrRight(ctx context.Context, client *RngClient, direction string) {
-	reqBody := api.SwipeDetails{
+	swipeRequest := models.SwipeRequest{
 		Swiper:  strconv.Itoa(randInt(client.rng, 1, 5000)),
 		Swipee:  strconv.Itoa(randInt(client.rng, 1, 1_000_000)),
 		Comment: randComment(client.rng, 256),
 	}
+	swipeEndpoint := fmt.Sprintf("%s/swipe/%s/", client.serverUrl, direction)
 
-	var err error
-	var resp *http.Response
+	body, err := json.Marshal(swipeRequest)
+	if err != nil {
+		log.Logger.Error().Msg(err.Error())
+	}
+	reader := bytes.NewReader(body)
+
+	ctxWithTimeout, cancelCtx := context.WithTimeout(ctx, 32*time.Second)
+	defer cancelCtx()
+	req, err := http.NewRequestWithContext(ctxWithTimeout, http.MethodPost, swipeEndpoint, reader)
+	if err != nil {
+		log.Logger.Error().Msg(err.Error())
+	}
+
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Content-Length", strconv.Itoa(len(body)))
+
 	maxRetries := 5
 	baseBackoff := 100 * time.Millisecond
-	maxBackoff := 32 * time.Second
 
-	// https://cloud.google.com/iot/docs/how-tos/exponential-backoff
-	for i := 0; i < maxRetries; i++ {
+	var resp *http.Response
+	for i := 1; i <= maxRetries; i++ {
 		// Send POST request
-		resp, err = client.apiClient.SwipeApi.Swipe(ctx, reqBody, direction)
+		resp, err = client.httpClient.Do(req)
 		if err == nil {
 			break // Successful API call
 		}
 		// Exponential backoff with jitter
 		backoffDuration := time.Duration(math.Pow(2, float64(i))) * baseBackoff
-		if backoffDuration > maxBackoff {
-			backoffDuration = maxBackoff
-		}
 		sleepDuration := backoffDuration + time.Duration(client.rng.Int63n(1000))*time.Millisecond
+		log.Logger.Info().Msgf("sleeping for %v", sleepDuration)
 		time.Sleep(sleepDuration)
 	}
 	if err != nil {
 		atomic.AddUint64(&errorCount, 1)
-		log.Logger.Error().Msg(err.Error())
+		log.Logger.Error().Msgf("max retries hit: %s", err.Error())
 		return
 	}
+	defer resp.Body.Close()
 
 	// StatusCode should be 200 or 201, else log warn
 	if resp.StatusCode == http.StatusOK || resp.StatusCode == http.StatusCreated {
-		log.Logger.Debug().Msg(resp.Status)
 		atomic.AddUint64(&successCount, 1)
+		log.Logger.Debug().Msg(resp.Status)
 	} else {
 		atomic.AddUint64(&errorCount, 1)
 		log.Logger.Warn().Msg(resp.Status)

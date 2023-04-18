@@ -6,7 +6,6 @@ import (
 	"time"
 
 	"github.com/rs/zerolog"
-	"github.com/rs/zerolog/diode"
 )
 
 var Logger zerolog.Logger
@@ -24,12 +23,6 @@ func init() {
 	}
 
 	fmt.Printf("Current log level: %s\n", zerolog.GlobalLevel().String())
-	wr := diode.NewWriter(os.Stdout, 1000, 10*time.Millisecond, func(missed int) {
-		fmt.Printf("Logger Dropped %d messages", missed)
-	})
 
-	logger := zerolog.New(wr).With().Timestamp().Logger()
-
-	// Set the logger with the proper context to the global Logger
-	Logger = logger
+	Logger = zerolog.New(os.Stdout).With().Timestamp().Logger()
 }
