@@ -18,7 +18,7 @@ import (
 )
 
 const (
-	maxWorkers  = 75
+	maxWorkers  = 100
 	numRequests = 500_000
 )
 
@@ -76,7 +76,7 @@ func main() {
 				ctxWithTimeout, cancelCtx := context.WithTimeout(ctx, 32*time.Second)
 				direction := data.RandDirection(apiClient.Rng)
 				t0 := time.Now()
-				swipeLeftOrRight(ctxWithTimeout, apiClient, direction)
+				swipeLeftOrRight(ctxWithTimeout, apiClient, direction) // The actual HTTP request
 				t1 := time.Since(t0)
 				cancelCtx()
 				// Each worker only appends to their own slice. Thread safe.
@@ -86,6 +86,7 @@ func main() {
 	}
 	wg.Wait()
 
+	// Calculate metrics
 	duration := time.Since(startTime)
 	success := atomic.LoadUint64(&successCount)
 	errors := atomic.LoadUint64(&errorCount)
@@ -103,26 +104,12 @@ func main() {
 			allResponseTimes = append(allResponseTimes, rtFloat)
 		}
 	}
-	mean, err := stats.Mean(allResponseTimes)
-	if err != nil {
-		log.Logger.Error().Msgf("error calculating mean: %v", err)
-	}
-	median, err := stats.Median(allResponseTimes)
-	if err != nil {
-		log.Logger.Error().Msgf("error calculating median: %v", err)
-	}
-	p99, err := stats.Percentile(allResponseTimes, 99)
-	if err != nil {
-		log.Logger.Error().Msgf("error calculating p99: %v", err)
-	}
-	min, err := stats.Min(allResponseTimes)
-	if err != nil {
-		log.Logger.Error().Msgf("error calculating min: %v", err)
-	}
-	max, err := stats.Max(allResponseTimes)
-	if err != nil {
-		log.Logger.Error().Msgf("error calculating max: %v", err)
-	}
+	mean, _ := stats.Mean(allResponseTimes)
+	median, _ := stats.Median(allResponseTimes)
+	p99, _ := stats.Percentile(allResponseTimes, 99)
+	min, _ := stats.Min(allResponseTimes)
+	max, _ := stats.Max(allResponseTimes)
+
 	log.Logger.Info().Msgf("Mean response time: %.2f ms", mean)
 	log.Logger.Info().Msgf("Median response time: %.2f ms", median)
 	log.Logger.Info().Msgf("P99 response time: %.2f ms", p99)
