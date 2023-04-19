@@ -18,13 +18,14 @@ import (
 )
 
 const (
-	maxWorkers  = 10
-	numRequests = 500_000
+	maxWorkers  = 1
+	numRequests = 10000
 )
 
 var (
-	successCount uint64
-	errorCount   uint64
+	successCount   uint64
+	errorCount     uint64
+	completedCount uint64 // For calculating throughput/sec
 )
 
 func main() {
@@ -60,8 +61,26 @@ func main() {
 
 	log.Logger.Info().Msgf("Using %d goroutines", maxWorkers)
 	log.Logger.Info().Msgf("Starting %d requests...", numRequests)
-	startTime := time.Now()
 
+	// Throughput monitoring goroutine (every second)
+	done := make(chan struct{})
+	throughputSamples := make([]float64, 0)
+	go func() {
+		prevCompleted := uint64(0)
+		for {
+			select {
+			case <-done: // Exit the Goroutine when the done channel is closed
+				return
+			case <-time.Tick(time.Second):
+				completed := atomic.LoadUint64(&completedCount)
+				throughput := float64(completed - prevCompleted)
+				throughputSamples = append(throughputSamples, throughput)
+				prevCompleted = completed
+			}
+		}
+	}()
+
+	startTime := time.Now()
 	responseTimes := make([][]time.Duration, maxWorkers)
 
 	// Spawn numWorkers
@@ -81,10 +100,12 @@ func main() {
 				cancelCtx()
 				// Each worker only appends to their own slice. Thread safe.
 				responseTimes[workerId] = append(responseTimes[workerId], t1)
+				atomic.AddUint64(&completedCount, 1)
 			}
 		}(i)
 	}
 	wg.Wait()
+	close(done)
 
 	// Calculate metrics
 	duration := time.Since(startTime)
@@ -115,6 +136,13 @@ func main() {
 	log.Logger.Info().Msgf("P99 response time: %.2f ms", p99)
 	log.Logger.Info().Msgf("Min response time: %.2f ms", min)
 	log.Logger.Info().Msgf("Max response time: %.2f ms", max)
+
+	metrics := os.Getenv("METRICS")
+	if metrics == "1" {
+		if err := log.LogThroughput(throughputSamples); err != nil {
+			log.Logger.Error().Msgf("error writing csv: %v", err)
+		}
+	}
 }
 
 func swipeLeftOrRight(ctx context.Context, client *client.ApiClient, direction string) {
