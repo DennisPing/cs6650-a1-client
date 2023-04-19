@@ -18,7 +18,7 @@ import (
 )
 
 const (
-	maxWorkers  = 10
+	maxWorkers  = 1
 	numRequests = 500_000
 )
 
