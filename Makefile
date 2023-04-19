@@ -1,9 +1,9 @@
-.PHONY: all client clean
+.PHONY: all httpclient clean
 
-all: client
+all: httpclient
 
-client:
-	go build -o ./client
+httpclient:
+	go build -o httpclient .
 
 clean:
-	rm -f ./client
+	rm -f httpclient

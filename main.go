@@ -1,12 +1,8 @@
 package main
 
 import (
-	"bytes"
 	"context"
-	"encoding/json"
 	"fmt"
-	"math"
-	"math/rand"
 	"net/http"
 	"os"
 	"strconv"
@@ -14,12 +10,14 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/DennisPing/cs6650-a1-client/client"
+	"github.com/DennisPing/cs6650-a1-client/data"
+	"github.com/DennisPing/cs6650-a1-client/log"
 	"github.com/DennisPing/cs6650-a1-client/models"
-	"github.com/DennisPing/cs6650-distributed-systems/assignment1/client-single/log"
+	"github.com/montanaflynn/stats"
 )
 
 const (
-	charset     = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789"
 	maxWorkers  = 64
 	numRequests = 500_000
 )
@@ -64,19 +62,27 @@ func main() {
 	log.Logger.Info().Msgf("Starting %d requests...", numRequests)
 	startTime := time.Now()
 
+	responseTimes := make([][]time.Duration, maxWorkers)
+
 	// Spawn numWorkers
 	for i := 0; i < maxWorkers; i++ {
 		wg.Add(1)
-		go func() {
+		go func(workerId int) {
 			defer wg.Done()
-			rngClient := NewRngClient(serverURL)
+			apiClient := client.NewApiClient(serverURL)
 
-			// Do tasks until taskQueue is empty
+			// Do tasks until taskQueue is empty. Then all workers will move on.
 			for range taskQueue {
-				direction := randDirection(rngClient.rng)
-				swipeLeftOrRight(ctx, rngClient, direction)
+				ctxWithTimeout, cancelCtx := context.WithTimeout(ctx, 32*time.Second)
+				direction := data.RandDirection(apiClient.Rng)
+				t0 := time.Now()
+				swipeLeftOrRight(ctxWithTimeout, apiClient, direction)
+				t1 := time.Since(t0)
+				cancelCtx()
+				// Each worker only appends to their own slice. Thread safe.
+				responseTimes[workerId] = append(responseTimes[workerId], t1)
 			}
-		}()
+		}(i)
 	}
 	wg.Wait()
 
@@ -89,51 +95,59 @@ func main() {
 	log.Logger.Info().Msgf("Error count: %d", errors)
 	log.Logger.Info().Msgf("Total run time: %v", duration)
 	log.Logger.Info().Msgf("Throughput: %.2f req/sec", throughput)
+
+	allResponseTimes := make([]float64, 0, numRequests)
+	for _, slice := range responseTimes { // Convert all time.Duration to float64
+		for _, rt := range slice {
+			rtFloat := float64(rt.Milliseconds())
+			allResponseTimes = append(allResponseTimes, rtFloat)
+		}
+	}
+	mean, err := stats.Mean(allResponseTimes)
+	if err != nil {
+		log.Logger.Error().Msgf("error calculating mean: %v", err)
+	}
+	median, err := stats.Median(allResponseTimes)
+	if err != nil {
+		log.Logger.Error().Msgf("error calculating median: %v", err)
+	}
+	p99, err := stats.Percentile(allResponseTimes, 99)
+	if err != nil {
+		log.Logger.Error().Msgf("error calculating p99: %v", err)
+	}
+	min, err := stats.Min(allResponseTimes)
+	if err != nil {
+		log.Logger.Error().Msgf("error calculating min: %v", err)
+	}
+	max, err := stats.Max(allResponseTimes)
+	if err != nil {
+		log.Logger.Error().Msgf("error calculating max: %v", err)
+	}
+	log.Logger.Info().Msgf("Mean response time: %.2f ms", mean)
+	log.Logger.Info().Msgf("Median response time: %.2f ms", median)
+	log.Logger.Info().Msgf("P99 response time: %.2f ms", p99)
+	log.Logger.Info().Msgf("Min response time: %.2f ms", min)
+	log.Logger.Info().Msgf("Max response time: %.2f ms", max)
 }
 
-func swipeLeftOrRight(ctx context.Context, client *RngClient, direction string) {
+func swipeLeftOrRight(ctx context.Context, client *client.ApiClient, direction string) {
 	swipeRequest := models.SwipeRequest{
-		Swiper:  strconv.Itoa(randInt(client.rng, 1, 5000)),
-		Swipee:  strconv.Itoa(randInt(client.rng, 1, 1_000_000)),
-		Comment: randComment(client.rng, 256),
+		Swiper:  strconv.Itoa(data.RandInt(client.Rng, 1, 5000)),
+		Swipee:  strconv.Itoa(data.RandInt(client.Rng, 1, 1_000_000)),
+		Comment: data.RandComment(client.Rng, 256),
 	}
-	swipeEndpoint := fmt.Sprintf("%s/swipe/%s/", client.serverUrl, direction)
+	swipeEndpoint := fmt.Sprintf("%s/swipe/%s/", client.ServerUrl, direction)
 
-	body, err := json.Marshal(swipeRequest)
+	req, err := client.CreateRequest(ctx, http.MethodPost, swipeEndpoint, swipeRequest)
 	if err != nil {
 		log.Logger.Error().Msg(err.Error())
-	}
-	reader := bytes.NewReader(body)
-
-	ctxWithTimeout, cancelCtx := context.WithTimeout(ctx, 32*time.Second)
-	defer cancelCtx()
-	req, err := http.NewRequestWithContext(ctxWithTimeout, http.MethodPost, swipeEndpoint, reader)
-	if err != nil {
-		log.Logger.Error().Msg(err.Error())
+		return
 	}
 
-	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("Content-Length", strconv.Itoa(len(body)))
-
-	maxRetries := 5
-	baseBackoff := 100 * time.Millisecond
-
-	var resp *http.Response
-	for i := 1; i <= maxRetries; i++ {
-		// Send POST request
-		resp, err = client.httpClient.Do(req)
-		if err == nil {
-			break // Successful API call
-		}
-		// Exponential backoff with jitter
-		backoffDuration := time.Duration(math.Pow(2, float64(i))) * baseBackoff
-		sleepDuration := backoffDuration + time.Duration(client.rng.Int63n(1000))*time.Millisecond
-		log.Logger.Info().Msgf("sleeping for %v", sleepDuration)
-		time.Sleep(sleepDuration)
-	}
+	resp, err := client.SendRequestWithTimeout(req, 5)
 	if err != nil {
 		atomic.AddUint64(&errorCount, 1)
-		log.Logger.Error().Msgf("max retries hit: %s", err.Error())
+		log.Logger.Error().Msgf("max retries hit: %v", err)
 		return
 	}
 	defer resp.Body.Close()
@@ -146,26 +160,4 @@ func swipeLeftOrRight(ctx context.Context, client *RngClient, direction string) 
 		atomic.AddUint64(&errorCount, 1)
 		log.Logger.Warn().Msg(resp.Status)
 	}
-}
-
-// Each goroutine client should pass in their own RNG
-func randInt(rng *rand.Rand, start, stop int) int {
-	return rng.Intn(stop) + start
-}
-
-// Each goroutine client should pass in their own RNG
-func randComment(rng *rand.Rand, length int) string {
-	b := make([]byte, length)
-	for i := range b {
-		b[i] = charset[rng.Intn(len(charset))]
-	}
-	return string(b)
-}
-
-// Each goroutine client should pass in their own RNG
-func randDirection(rng *rand.Rand) string {
-	if rng.Intn(2) == 1 {
-		return "right"
-	}
-	return "left"
 }
