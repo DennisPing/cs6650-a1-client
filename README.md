@@ -9,55 +9,45 @@ make
 
 ### Run
 ```
-./client
+./httpclient
 ```
 
-## Watch out
+### Deploy
 
-The Swagger API specifies the POST endpoint as:
-```
-/swipe/{leftorright}/
-```
+Deployed on Railway.app
 
-The trailing slash must be there! This is different than:
-```
-/swipe/{leftorright}
-```
+## Results
 
-## Build and Test Docker image
-```
-docker build -t client:a1 .
-```
+| Thread count | Throughtput (req/sec) | P99 response time (ms) |
+| ------------ | --------------------- | ---------------------- |
+| 1            | 593.48                | 2.00                   |
+| 10           | 3525.35               | 5.00                   |
+| 25           | 4284.47               | 10.00                  |
+| 50           | 5324.35               | 15.00                  |
+| 75           | 5428.06               | 20.00                  |
+| 100          | 5365.31               | 26.00                  |
 
-## Create Docker network
-```
-docker network create my_network
-```
+It seems like 50 threads is the optimal setup before significant diminishing returns.  
+1.7 vCPU Peak  
+20 MB Peak
 
-```
-docker run --name client --network my_network -e SERVER_URL=http://server:8080 -e LOG_LEVEL=Warn client:a1
-```
+## Design
 
-## Stop local Docker container
-```
-docker ps
-docker stop <container id>
-docker network rm my_network
-```
+![Client](results/a1-client-diagram.png)
 
-## Tag and push Docker image to Google Container Registry
-```
-docker tag client:a1 gcr.io/cs6650-dping/client:a1
-docker push gcr.io/cs6650-dping/client:a1
-```
+## Screenshots
 
-## Deploy new Cloud Run service
-```
-gcloud run deploy client \
-    --image gcr.io/cs6650-dping/client:a1 \
-    --platform managed \
-    --region us-central1 \
-    --allow-unauthenticated \
-    --set-env-vars="LOG_LEVEL=Info" \
-    --set-env-vars="SERVER_URL=https://server-[random]-uc.a.run.app"
-```
+### 1 thread
+![1](results/1worker500krequests.png)
+
+### 25 threads
+![1](results/1worker500krequests.png)
+
+### 50 threads
+![50](results/25workers500krequests.png)
+
+### 75 threads
+![75](results/75workers500krequests.png)
+
+### 100 threads
+![100](results/100workers500krequests.png)
