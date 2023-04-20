@@ -33,7 +33,7 @@ It seems like 50 threads is the optimal setup before significant diminishing ret
 
 ## Design
 
-![Client](results/a1-client-diagram.png)
+![Client](results/a1-client-diagram-v2.png)
 
 ## Screenshots
 
