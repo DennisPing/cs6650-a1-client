@@ -5,26 +5,18 @@ import (
 	"fmt"
 	"net/http"
 	"os"
-	"strconv"
 	"sync"
-	"sync/atomic"
 	"time"
 
 	"github.com/DennisPing/cs6650-a1-client/client"
 	"github.com/DennisPing/cs6650-a1-client/data"
 	"github.com/DennisPing/cs6650-a1-client/log"
-	"github.com/DennisPing/cs6650-a1-client/models"
 	"github.com/montanaflynn/stats"
 )
 
 const (
 	maxWorkers  = 50
 	numRequests = 500_000
-)
-
-var (
-	successCount uint64
-	errorCount   uint64
 )
 
 func main() {
@@ -35,13 +27,13 @@ func main() {
 
 	port := os.Getenv("CLIENT_PORT") // Set the PORT to 8081 for local testing
 	if port == "" {
-		port = "8080" // For Cloud Run
+		port = "8080" // Running in the cloud
 	}
 
-	// Set up dummy HTTP server to satisfy Cloud Run requirements
+	// Health check endpoint
 	go func() {
-		http.HandleFunc("/dummy", func(w http.ResponseWriter, r *http.Request) {
-			w.WriteHeader(http.StatusNoContent)
+		http.HandleFunc("/health", func(w http.ResponseWriter, r *http.Request) {
+			w.WriteHeader(http.StatusOK)
 		})
 		addr := fmt.Sprintf(":%s", port)
 		log.Logger.Fatal().Msg(http.ListenAndServe(addr, nil).Error())
@@ -64,36 +56,45 @@ func main() {
 
 	responseTimes := make([][]time.Duration, maxWorkers)
 
-	// Spawn numWorkers
+	workerPool := make([]*client.ApiClient, maxWorkers)
 	for i := 0; i < maxWorkers; i++ {
+		workerPool[i] = client.NewApiClient(serverURL)
+	}
+
+	// Spawn numWorkers
+	for i := 0; i < len(workerPool); i++ {
 		wg.Add(1)
 		go func(workerId int) {
 			defer wg.Done()
-			apiClient := client.NewApiClient(serverURL)
+			apiClient := workerPool[workerId]
 
 			// Do tasks until taskQueue is empty. Then all workers will move on.
 			for range taskQueue {
-				ctxWithTimeout, cancelCtx := context.WithTimeout(ctx, 32*time.Second)
+				ctxWithTimeout, cancelCtx := context.WithTimeout(ctx, 10*time.Second)
 				direction := data.RandDirection(apiClient.Rng)
 				t0 := time.Now()
-				swipeLeftOrRight(ctxWithTimeout, apiClient, direction) // The actual HTTP request
+				apiClient.SwipeLeftOrRight(ctxWithTimeout, direction) // The actual HTTP request
 				t1 := time.Since(t0)
 				cancelCtx()
-				// Each worker only appends to their own slice. Thread safe.
-				responseTimes[workerId] = append(responseTimes[workerId], t1)
+				responseTimes[workerId] = append(responseTimes[workerId], t1) // Thread safe
 			}
 		}(i)
 	}
 	wg.Wait()
 
+	var successCount uint64
+	var errorCount uint64
+	for _, worker := range workerPool { // Aggregate all successes and errors from each worker
+		successCount += worker.SuccessCount
+		errorCount += worker.ErrorCount
+	}
+
 	// Calculate metrics
 	duration := time.Since(startTime)
-	success := atomic.LoadUint64(&successCount)
-	errors := atomic.LoadUint64(&errorCount)
-	throughput := float64(success) / duration.Seconds()
+	throughput := float64(successCount) / duration.Seconds()
 
-	log.Logger.Info().Msgf("Success count: %d", success)
-	log.Logger.Info().Msgf("Error count: %d", errors)
+	log.Logger.Info().Msgf("Success count: %d", successCount)
+	log.Logger.Info().Msgf("Error count: %d", errorCount)
 	log.Logger.Info().Msgf("Total run time: %v", duration)
 	log.Logger.Info().Msgf("Throughput: %.2f req/sec", throughput)
 
@@ -115,36 +116,4 @@ func main() {
 	log.Logger.Info().Msgf("P99 response time: %.2f ms", p99)
 	log.Logger.Info().Msgf("Min response time: %.2f ms", min)
 	log.Logger.Info().Msgf("Max response time: %.2f ms", max)
-}
-
-func swipeLeftOrRight(ctx context.Context, client *client.ApiClient, direction string) {
-	swipeRequest := models.SwipeRequest{
-		Swiper:  strconv.Itoa(data.RandInt(client.Rng, 1, 5000)),
-		Swipee:  strconv.Itoa(data.RandInt(client.Rng, 1, 1_000_000)),
-		Comment: data.RandComment(client.Rng, 256),
-	}
-	swipeEndpoint := fmt.Sprintf("%s/swipe/%s/", client.ServerUrl, direction)
-
-	req, err := client.CreateRequest(ctx, http.MethodPost, swipeEndpoint, swipeRequest)
-	if err != nil {
-		log.Logger.Error().Msg(err.Error())
-		return
-	}
-
-	resp, err := client.SendRequestWithTimeout(req, 5)
-	if err != nil {
-		atomic.AddUint64(&errorCount, 1)
-		log.Logger.Error().Msgf("max retries hit: %v", err)
-		return
-	}
-	defer resp.Body.Close()
-
-	// StatusCode should be 200 or 201, else log warn
-	if resp.StatusCode == http.StatusOK || resp.StatusCode == http.StatusCreated {
-		atomic.AddUint64(&successCount, 1)
-		log.Logger.Debug().Msg(resp.Status)
-	} else {
-		atomic.AddUint64(&errorCount, 1)
-		log.Logger.Warn().Msg(resp.Status)
-	}
 }

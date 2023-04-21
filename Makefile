@@ -1,4 +1,4 @@
-.PHONY: all httpclient clean
+.PHONY: all clean
 
 all: httpclient
 
