@@ -50,25 +50,24 @@ func main() {
 
 	var wg sync.WaitGroup
 
-	log.Logger.Info().Msgf("Using %d goroutines", maxWorkers)
-	log.Logger.Info().Msgf("Starting %d requests...", numRequests)
-	startTime := time.Now()
-
 	responseTimes := make([][]time.Duration, maxWorkers)
-
 	workerPool := make([]*client.ApiClient, maxWorkers)
 	for i := 0; i < maxWorkers; i++ {
 		workerPool[i] = client.NewApiClient(serverURL)
 	}
 
-	// Spawn numWorkers
+	log.Logger.Info().Msgf("Using %d goroutines", maxWorkers)
+	log.Logger.Info().Msgf("Starting %d requests...", numRequests)
+	startTime := time.Now()
+
+	// Activate workers
 	for i := 0; i < len(workerPool); i++ {
 		wg.Add(1)
 		go func(workerId int) {
 			defer wg.Done()
 			apiClient := workerPool[workerId]
 
-			// Do tasks until taskQueue is empty. Then all workers will move on.
+			// Do tasks until taskQueue is empty. Then all workers can go home.
 			for range taskQueue {
 				ctxWithTimeout, cancelCtx := context.WithTimeout(ctx, 10*time.Second)
 				direction := data.RandDirection(apiClient.Rng)
@@ -82,15 +81,15 @@ func main() {
 	}
 	wg.Wait()
 
+	duration := time.Since(startTime)
+
+	// Calculate metrics
 	var successCount uint64
 	var errorCount uint64
-	for _, worker := range workerPool { // Aggregate all successes and errors from each worker
+	for _, worker := range workerPool {
 		successCount += worker.SuccessCount
 		errorCount += worker.ErrorCount
 	}
-
-	// Calculate metrics
-	duration := time.Since(startTime)
 	throughput := float64(successCount) / duration.Seconds()
 
 	log.Logger.Info().Msgf("Success count: %d", successCount)
