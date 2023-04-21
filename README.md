@@ -41,7 +41,7 @@ It seems like 50 threads is the optimal setup before significant diminishing ret
 ![1](results/1worker500krequests.png)
 
 ### 25 threads
-![25](results/25worker500krequests.png)
+![25](results/25workers500krequests.png)
 
 ### 50 threads
 ![50](results/50workers500krequests.png)
