@@ -25,7 +25,7 @@ func main() {
 		log.Logger.Fatal().Msg("SERVER_URL env variable not set")
 	}
 
-	port := os.Getenv("CLIENT_PORT") // Set the PORT to 8081 for local testing
+	port := os.Getenv("PORT") // Set the PORT to 8081 for local testing
 	if port == "" {
 		port = "8080" // Running in the cloud
 	}
