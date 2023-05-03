@@ -16,6 +16,10 @@ make
 
 Deployed on Railway.app
 
+### Metrics
+
+Metrics collected and analyzed using [Axiom.co](https://axiom.co)
+
 ## Results
 
 | Goroutine count | Throughtput (req/sec) | P99 response time (ms) |
