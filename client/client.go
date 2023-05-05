@@ -25,15 +25,15 @@ type ApiClient struct {
 	ErrorCount   uint64
 }
 
-func NewApiClient(serverUrl string) *ApiClient {
+func NewApiClient(transport *http.Transport, serverUrl string) *ApiClient {
 	return &ApiClient{
 		ServerUrl:  serverUrl,
-		HttpClient: &http.Client{},
+		HttpClient: &http.Client{Transport: transport},
 		Rng:        rand.New(rand.NewSource(time.Now().UnixNano())),
 	}
 }
 
-// POST /swipe/{leftorright}
+// POST /swipe/{leftorright}/
 func (client *ApiClient) SwipeLeftOrRight(ctx context.Context, direction string) {
 	swipeRequest := models.SwipeRequest{
 		Swiper:  strconv.Itoa(data.RandInt(client.Rng, 1, 5000)),

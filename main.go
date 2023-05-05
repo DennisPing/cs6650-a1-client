@@ -15,7 +15,7 @@ import (
 )
 
 const (
-	maxWorkers  = 50
+	maxWorkers  = 100
 	numRequests = 500_000
 )
 
@@ -51,9 +51,17 @@ func main() {
 	var wg sync.WaitGroup
 
 	responseTimes := make([][]time.Duration, maxWorkers)
+
+	// Create a shared transport since we have concurrent clients
+	sharedTransport := &http.Transport{
+		MaxIdleConns:        maxWorkers,
+		MaxIdleConnsPerHost: maxWorkers,
+		IdleConnTimeout:     60 * time.Second,
+	}
+
 	workerPool := make([]*client.ApiClient, maxWorkers)
 	for i := 0; i < maxWorkers; i++ {
-		workerPool[i] = client.NewApiClient(serverURL)
+		workerPool[i] = client.NewApiClient(sharedTransport, serverURL)
 	}
 
 	log.Logger.Info().Msgf("Using %d goroutines", maxWorkers)
