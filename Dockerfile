@@ -12,7 +12,7 @@ RUN go mod download
 COPY ./ ./
 
 # Build the binary.
-RUN go build -v -o client ./
+RUN go build -v -o a1-client ./
 
 # Use the official Debian slim image for a lean production container.
 FROM debian:buster-slim
@@ -21,7 +21,7 @@ RUN set -x && apt-get update && DEBIAN_FRONTEND=noninteractive apt-get install -
     rm -rf /var/lib/apt/lists/*
 
 # Copy the binary to the production image from the builder stage.
-COPY --from=builder /app/client /app/client
+COPY --from=builder /app/a1-client /app/a1-client
 
 # Run the consumer service.
-CMD ["/app/client"]
+CMD ["/app/a1-client"]
