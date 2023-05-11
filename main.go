@@ -27,7 +27,7 @@ func main() {
 
 	port := os.Getenv("PORT") // Set the PORT to 8081 for local testing
 	if port == "" {
-		port = "8080" // Running in the cloud
+		port = "8081" // Running in the cloud
 	}
 
 	// Health check endpoint
